@@ -71,3 +71,16 @@ export default defineConfig([
   },
 ])
 ```
+
+## Deployment (Vercel)
+
+This project is configured for easy deployment on [Vercel](https://vercel.com/).
+
+### Prerequisites
+1.  Connect your GitHub repository to Vercel.
+2.  Set the **Root Directory** to the root of the repository.
+3.  Set the following **Environment Variables** in the Vercel Dashboard:
+    -   `VITE_SUPABASE_URL`: Your Supabase Project URL.
+    -   `VITE_SUPABASE_ANON_KEY`: Your Supabase Anonymous Key.
+
+The project includes a `vercel.json` for SPA routing and a `.vercelignore` to optimize the build process by ignoring non-frontend files.

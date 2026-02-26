@@ -1,0 +1,8 @@
+backend-server/
+android-app/
+supabase_schema.sql
+README.md
+build_output.txt
+node_modules/
+dist/
+.env*
