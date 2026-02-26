@@ -1,33 +1,47 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Phone, User as UserIcon, ArrowRight, MessageCircle, Sun, Moon } from 'lucide-react';
+import { Mail, Key, ArrowRight, MessageCircle, Sun, Moon } from 'lucide-react';
 
 interface LoginProps {
-    onLogin: (phone: string) => Promise<void>;
-    onRegister: (phone: string, name: string) => Promise<void>;
+    onLogin: (email: string) => Promise<void>;
+    onVerifyOtp: (email: string, otp: string) => Promise<any>;
     isDarkMode: boolean;
     toggleDarkMode: () => void;
 }
 
-const Login: React.FC<LoginProps> = ({ onLogin, onRegister, isDarkMode, toggleDarkMode }) => {
-    const [phone, setPhone] = useState('');
-    const [name, setName] = useState('');
-    const [isRegistering, setIsRegistering] = useState(false);
+const Login: React.FC<LoginProps> = ({ onLogin, onVerifyOtp, isDarkMode, toggleDarkMode }) => {
+    const [email, setEmail] = useState('');
+    const [otp, setOtp] = useState('');
+    const [otpSent, setOtpSent] = useState(false);
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
 
-    const handleSubmit = async (e: React.FormEvent) => {
+    const handleSendOtp = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setError('');
+        setLoading(true);
+        console.log('Sending OTP to:', email);
+        try {
+            await onLogin(email);
+            console.log('OTP sent successfully');
+            setOtpSent(true);
+        } catch (err: any) {
+            console.error('UI Login Catch:', err);
+            setError(err.message || 'Failed to send OTP. Please check your console.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+
+    const handleVerifyOtp = async (e: React.FormEvent) => {
         e.preventDefault();
         setError('');
         setLoading(true);
         try {
-            if (isRegistering) {
-                await onRegister(phone, name);
-            } else {
-                await onLogin(phone);
-            }
+            await onVerifyOtp(email, otp);
         } catch (err: any) {
-            setError(err.response?.data?.error || 'Authentication failed');
+            setError(err.message || 'Invalid OTP');
         } finally {
             setLoading(false);
         }
@@ -35,7 +49,6 @@ const Login: React.FC<LoginProps> = ({ onLogin, onRegister, isDarkMode, toggleDa
 
     return (
         <div className="flex flex-col items-center justify-center min-h-screen bg-bg-light dark:bg-bg-dark transition-colors duration-500 p-6">
-            {/* Dark Mode Toggle */}
             <div className="fixed top-8 right-8 z-50">
                 <button
                     onClick={toggleDarkMode}
@@ -55,7 +68,6 @@ const Login: React.FC<LoginProps> = ({ onLogin, onRegister, isDarkMode, toggleDa
                 </button>
             </div>
 
-            {/* Background Blobs */}
             <div className="fixed top-0 left-0 w-full h-full overflow-hidden -z-10 opacity-40">
                 <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-primary-light blur-[120px] rounded-full animate-blob"></div>
                 <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-accent blur-[120px] rounded-full animate-blob animation-delay-2000"></div>
@@ -75,61 +87,58 @@ const Login: React.FC<LoginProps> = ({ onLogin, onRegister, isDarkMode, toggleDa
                         <MessageCircle size={40} className="text-primary-light" />
                     </motion.div>
                     <h2 className="text-3xl font-extrabold text-[#111b21] dark:text-white mb-2">
-                        {isRegistering ? 'Create Account' : 'Welcome Back'}
+                        NHAPP Web
                     </h2>
                     <p className="text-gray-500 dark:text-gray-400">
-                        {isRegistering ? 'Join the secure chat community' : 'Sign in to stay connected'}
+                        {otpSent ? 'Enter the code sent to your email' : 'Sign in with your email'}
                     </p>
                 </div>
 
                 <div className="bg-white/80 dark:bg-bg-card/80 backdrop-blur-xl p-8 rounded-30 shadow-premium border border-white/20 dark:border-white/5">
-                    <form onSubmit={handleSubmit} className="space-y-6">
-                        <div className="space-y-2">
-                            <label className="text-sm font-semibold text-gray-700 dark:text-gray-300 ml-1">
-                                Phone Number
-                            </label>
-                            <div className="relative group">
-                                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-primary-light transition-colors">
-                                    <Phone size={20} />
-                                </div>
-                                <input
-                                    type="text"
-                                    value={phone}
-                                    onChange={(e) => setPhone(e.target.value)}
-                                    className="w-full bg-bg-light dark:bg-[#202c33] border-none rounded-20 py-3.5 pl-12 pr-4 focus:ring-2 focus:ring-primary-light transition-all dark:text-white"
-                                    placeholder="+1 (123) 456-7890"
-                                    required
-                                />
-                            </div>
-                        </div>
-
-                        <AnimatePresence mode="wait">
-                            {isRegistering && (
-                                <motion.div
-                                    initial={{ opacity: 0, height: 0 }}
-                                    animate={{ opacity: 1, height: 'auto' }}
-                                    exit={{ opacity: 0, height: 0 }}
-                                    className="space-y-2"
-                                >
-                                    <label className="text-sm font-semibold text-gray-700 dark:text-gray-300 ml-1">
-                                        Your Name
-                                    </label>
-                                    <div className="relative group">
-                                        <div className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-primary-light transition-colors">
-                                            <UserIcon size={20} />
-                                        </div>
-                                        <input
-                                            type="text"
-                                            value={name}
-                                            onChange={(e) => setName(e.target.value)}
-                                            className="w-full bg-bg-light dark:bg-[#202c33] border-none rounded-20 py-3.5 pl-12 pr-4 focus:ring-2 focus:ring-primary-light transition-all dark:text-white"
-                                            placeholder="John Doe"
-                                            required={isRegistering}
-                                        />
+                    <form onSubmit={otpSent ? handleVerifyOtp : handleSendOtp} className="space-y-6">
+                        {!otpSent ? (
+                            <div className="space-y-2">
+                                <label htmlFor="email" className="text-sm font-semibold text-gray-700 dark:text-gray-300 ml-1">
+                                    Email Address
+                                </label>
+                                <div className="relative group">
+                                    <div className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-primary-light transition-colors">
+                                        <Mail size={20} />
                                     </div>
-                                </motion.div>
-                            )}
-                        </AnimatePresence>
+                                    <input
+                                        type="email"
+                                        id="email"
+                                        name="email"
+                                        value={email}
+                                        onChange={(e) => setEmail(e.target.value)}
+                                        className="w-full bg-bg-light dark:bg-[#202c33] border-none rounded-20 py-3.5 pl-12 pr-4 focus:ring-2 focus:ring-primary-light transition-all dark:text-white"
+                                        placeholder="user@example.com"
+                                        required
+                                    />
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="space-y-2">
+                                <label htmlFor="otp" className="text-sm font-semibold text-gray-700 dark:text-gray-300 ml-1">
+                                    Verification Code
+                                </label>
+                                <div className="relative group">
+                                    <div className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-primary-light transition-colors">
+                                        <Key size={20} />
+                                    </div>
+                                    <input
+                                        type="text"
+                                        id="otp"
+                                        name="otp"
+                                        value={otp}
+                                        onChange={(e) => setOtp(e.target.value)}
+                                        className="w-full bg-bg-light dark:bg-[#202c33] border-none rounded-20 py-3.5 pl-12 pr-4 focus:ring-2 focus:ring-primary-light transition-all dark:text-white"
+                                        placeholder="123456"
+                                        required
+                                    />
+                                </div>
+                            </div>
+                        )}
 
                         {error && (
                             <motion.p
@@ -148,22 +157,20 @@ const Login: React.FC<LoginProps> = ({ onLogin, onRegister, isDarkMode, toggleDa
                             disabled={loading}
                             className="w-full bg-gradient-to-r from-primary-light to-primary-dark text-white rounded-20 py-4 font-bold shadow-lg shadow-primary-light/30 flex items-center justify-center space-x-2 disabled:opacity-70 transition-all"
                         >
-                            <span>{loading ? 'Processing...' : (isRegistering ? 'Get Started' : 'Sign In')}</span>
+                            <span>{loading ? 'Processing...' : (otpSent ? 'Verify' : 'Send Code')}</span>
                             {!loading && <ArrowRight size={20} />}
                         </motion.button>
-                    </form>
 
-                    <div className="mt-8 text-center">
-                        <button
-                            onClick={() => {
-                                setIsRegistering(!isRegistering);
-                                setError('');
-                            }}
-                            className="text-primary-light font-semibold hover:text-primary-dark transition-colors text-sm"
-                        >
-                            {isRegistering ? 'Already have an account? Sign In' : "Don't have an account? Create one"}
-                        </button>
-                    </div>
+                        {otpSent && (
+                            <button
+                                type="button"
+                                onClick={() => setOtpSent(false)}
+                                className="w-full text-center text-sm text-gray-500 hover:text-primary-light transition-colors mt-2"
+                            >
+                                Use a different email
+                            </button>
+                        )}
+                    </form>
                 </div>
 
                 <p className="mt-10 text-center text-xs text-gray-400 font-medium">
@@ -175,3 +182,4 @@ const Login: React.FC<LoginProps> = ({ onLogin, onRegister, isDarkMode, toggleDa
 };
 
 export default Login;
+

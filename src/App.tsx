@@ -6,7 +6,7 @@ import ChatInterface from './components/ChatInterface';
 import SplashScreen from './components/SplashScreen';
 
 const App: React.FC = () => {
-  const { user, loading, login, register, logout } = useAuth();
+  const { user, loading, login, verifyOtp, logout } = useAuth();
   const [showSplash, setShowSplash] = useState(true);
   const [isDarkMode, setIsDarkMode] = useState(() => {
     return localStorage.getItem('theme') === 'dark' ||
@@ -55,7 +55,7 @@ const App: React.FC = () => {
         >
           <Login
             onLogin={login}
-            onRegister={register}
+            onVerifyOtp={verifyOtp}
             isDarkMode={isDarkMode}
             toggleDarkMode={toggleDarkMode}
           />
@@ -79,5 +79,6 @@ const App: React.FC = () => {
     </AnimatePresence>
   );
 };
+
 
 export default App;

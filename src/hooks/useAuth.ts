@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
-import { authApi } from '../services/api';
-import { socketService } from '../services/socket';
+import { supabase } from '../services/supabaseClient';
 
 export interface User {
     id: string;
-    phone: string;
+    email?: string;
     name?: string;
+    avatar_url?: string;
 }
 
 export const useAuth = () => {
@@ -13,41 +13,71 @@ export const useAuth = () => {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        const savedUser = localStorage.getItem('user');
-        const token = localStorage.getItem('accessToken');
-        if (savedUser && token) {
-            const parsedUser = JSON.parse(savedUser);
-            setUser(parsedUser);
-            socketService.connect(token);
-        }
-        setLoading(false);
+        // Check current session
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            if (session?.user) {
+                setUser({
+                    id: session.user.id,
+                    email: session.user.email,
+                    name: session.user.user_metadata.name,
+                    avatar_url: session.user.user_metadata.avatar_url,
+                });
+            }
+            setLoading(false);
+        });
+
+        // Listen for auth changes
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+            if (session?.user) {
+                setUser({
+                    id: session.user.id,
+                    email: session.user.email,
+                    name: session.user.user_metadata.name,
+                    avatar_url: session.user.user_metadata.avatar_url,
+                });
+            } else {
+                setUser(null);
+            }
+            setLoading(false);
+        });
+
+        return () => subscription.unsubscribe();
     }, []);
 
-    const login = async (phone: string) => {
-        const { data } = await authApi.login({ phone });
-        setUser(data.user);
-        localStorage.setItem('user', JSON.stringify(data.user));
-        localStorage.setItem('accessToken', data.accessToken);
-        localStorage.setItem('refreshToken', data.refreshToken);
-        socketService.connect(data.accessToken);
+    const login = async (email: string) => {
+        console.log('Attempting login for:', email);
+        const { error } = await supabase.auth.signInWithOtp({
+            email,
+            options: {
+                shouldCreateUser: true,
+            },
+        });
+        if (error) {
+            console.error('Login error:', error);
+            throw error;
+        }
+        console.log('Login OTP request successful');
     };
 
-    const register = async (phone: string, name: string) => {
-        const { data } = await authApi.register({ phone, name });
-        setUser(data.user);
-        localStorage.setItem('user', JSON.stringify(data.user));
-        localStorage.setItem('accessToken', data.accessToken);
-        localStorage.setItem('refreshToken', data.refreshToken);
-        socketService.connect(data.accessToken);
+    const verifyOtp = async (email: string, token: string) => {
+        console.log('Attempting OTP verification for:', email);
+        const { data, error } = await supabase.auth.verifyOtp({
+            email,
+            token,
+            type: 'email',
+        });
+        if (error) {
+            console.error('OTP verification error:', error);
+            throw error;
+        }
+        console.log('OTP verification successful', data);
+        return data;
     };
 
-    const logout = () => {
-        setUser(null);
-        localStorage.removeItem('user');
-        localStorage.removeItem('accessToken');
-        localStorage.removeItem('refreshToken');
-        socketService.disconnect();
+    const logout = async () => {
+        await supabase.auth.signOut();
     };
 
-    return { user, loading, login, register, logout };
+    return { user, loading, login, verifyOtp, logout };
 };
+
