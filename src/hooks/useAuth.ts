@@ -45,7 +45,6 @@ export const useAuth = () => {
     }, []);
 
     const login = async (email: string) => {
-        console.log('Attempting login for:', email);
         const { error } = await supabase.auth.signInWithOtp({
             email,
             options: {
@@ -53,24 +52,19 @@ export const useAuth = () => {
             },
         });
         if (error) {
-            console.error('Login error:', error);
             throw error;
         }
-        console.log('Login OTP request successful');
     };
 
     const verifyOtp = async (email: string, token: string) => {
-        console.log('Attempting OTP verification for:', email);
         const { data, error } = await supabase.auth.verifyOtp({
             email,
             token,
             type: 'email',
         });
         if (error) {
-            console.error('OTP verification error:', error);
             throw error;
         }
-        console.log('OTP verification successful', data);
         return data;
     };
 

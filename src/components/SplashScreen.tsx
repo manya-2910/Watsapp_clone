@@ -39,7 +39,7 @@ const SplashScreen: React.FC = () => {
                 className="relative"
             >
                 <div className="absolute inset-0 bg-primary-light blur-3xl opacity-20 rounded-full"></div>
-                <div className="relative bg-white dark:bg-bg-card p-6 rounded-full shadow-premium">
+                <div className="relative bg-bg-card p-6 rounded-full shadow-premium">
                     <MessageCircle size={64} className="text-primary-light" />
                 </div>
             </motion.div>

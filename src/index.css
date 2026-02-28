@@ -4,23 +4,21 @@
 @theme {
   --font-inter: 'Inter', sans-serif;
 
+  /* Semantic Colors */
   --color-primary-light: #10b981;
   --color-primary-dark: #059669;
   --color-accent: #00a884;
 
-  --color-bg-light: #f0f2f5;
-  --color-bg-dark: #0b141a;
-  --color-bg-card: #ffffff;
-  --color-card-dark: #111b21;
+  --color-bg-app: var(--bg-app);
+  --color-bg-card: var(--bg-card);
+  --color-text-main: var(--text-main);
+  --color-text-muted: var(--text-muted);
 
   --color-whatsapp-emerald: #10b981;
   --color-whatsapp-teal: #00a884;
   --color-whatsapp-light: #dcf8c6;
   --color-whatsapp-dark: #128c7e;
   --color-whatsapp-dark-deeper: #075e54;
-
-  --color-text-light: #111b21;
-  --color-text-dark: #e9edef;
 
   --radius-20: 20px;
   --radius-24: 24px;
@@ -51,12 +49,27 @@
   }
 }
 
+/* Explicit class-based dark mode selector for v4 */
+@variant dark (&:where(.dark, .dark *));
+
 :root {
+  --bg-app: #f0f2f5;
+  --bg-card: #ffffff;
+  --text-main: #111b21;
+  --text-muted: #667781;
+
   --whatsapp-green: #25D366;
   --whatsapp-green-dark: #128C7E;
   --whatsapp-teal: #075E54;
   --whatsapp-blue: #34B7F1;
   --whatsapp-gray: #ECE5DD;
+}
+
+.dark {
+  --bg-app: #0b141a;
+  --bg-card: #111b21;
+  --text-main: #e9edef;
+  --text-muted: #8696a0;
 }
 
 * {
@@ -73,7 +86,7 @@ body {
 }
 
 body {
-  @apply bg-bg-light text-text-light dark:bg-bg-dark dark:text-text-dark transition-colors duration-500;
+  @apply bg-bg-app text-text-main transition-colors duration-500;
 }
 
 /* Custom Scrollbar */

@@ -20,13 +20,10 @@ const Login: React.FC<LoginProps> = ({ onLogin, onVerifyOtp, isDarkMode, toggleD
         e.preventDefault();
         setError('');
         setLoading(true);
-        console.log('Sending OTP to:', email);
         try {
             await onLogin(email);
-            console.log('OTP sent successfully');
             setOtpSent(true);
         } catch (err: any) {
-            console.error('UI Login Catch:', err);
             setError(err.message || 'Failed to send OTP. Please check your console.');
         } finally {
             setLoading(false);
@@ -48,7 +45,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, onVerifyOtp, isDarkMode, toggleD
     };
 
     return (
-        <div className="flex flex-col items-center justify-center min-h-screen bg-bg-light dark:bg-bg-dark transition-colors duration-500 p-6">
+        <div className="flex flex-col items-center justify-center min-h-screen bg-bg-app transition-colors duration-500 p-6">
             <div className="fixed top-8 right-8 z-50">
                 <button
                     onClick={toggleDarkMode}
@@ -82,23 +79,23 @@ const Login: React.FC<LoginProps> = ({ onLogin, onVerifyOtp, isDarkMode, toggleD
                     <motion.div
                         animate={{ y: [0, -10, 0] }}
                         transition={{ repeat: Infinity, duration: 4, ease: "easeInOut" }}
-                        className="inline-block p-4 bg-white dark:bg-bg-card rounded-24 shadow-soft mb-6"
+                        className="inline-block p-4 bg-bg-card rounded-24 shadow-soft mb-6"
                     >
                         <MessageCircle size={40} className="text-primary-light" />
                     </motion.div>
-                    <h2 className="text-3xl font-extrabold text-[#111b21] dark:text-white mb-2">
+                    <h2 className="text-3xl font-extrabold text-text-main mb-2">
                         NHAPP Web
                     </h2>
-                    <p className="text-gray-500 dark:text-gray-400">
+                    <p className="text-text-muted">
                         {otpSent ? 'Enter the code sent to your email' : 'Sign in with your email'}
                     </p>
                 </div>
 
-                <div className="bg-white/80 dark:bg-bg-card/80 backdrop-blur-xl p-8 rounded-30 shadow-premium border border-white/20 dark:border-white/5">
+                <div className="bg-bg-card/80 backdrop-blur-xl p-8 rounded-30 shadow-premium border border-white/20 dark:border-white/5">
                     <form onSubmit={otpSent ? handleVerifyOtp : handleSendOtp} className="space-y-6">
                         {!otpSent ? (
                             <div className="space-y-2">
-                                <label htmlFor="email" className="text-sm font-semibold text-gray-700 dark:text-gray-300 ml-1">
+                                <label htmlFor="email" className="text-sm font-semibold text-text-muted ml-1">
                                     Email Address
                                 </label>
                                 <div className="relative group">
@@ -119,7 +116,7 @@ const Login: React.FC<LoginProps> = ({ onLogin, onVerifyOtp, isDarkMode, toggleD
                             </div>
                         ) : (
                             <div className="space-y-2">
-                                <label htmlFor="otp" className="text-sm font-semibold text-gray-700 dark:text-gray-300 ml-1">
+                                <label htmlFor="otp" className="text-sm font-semibold text-text-muted ml-1">
                                     Verification Code
                                 </label>
                                 <div className="relative group">

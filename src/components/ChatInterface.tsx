@@ -3,7 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
     LogOut, Send, Search, Paperclip,
     Smile, Moon, Sun,
-    CheckCheck, User, FileText, ExternalLink
+    CheckCheck, User, FileText, ExternalLink,
+    Mic, Trash2
 } from 'lucide-react';
 import { supabase } from '../services/supabaseClient';
 import SkeletonChat from './SkeletonChat';
@@ -31,133 +32,135 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ user, onLogout, isDarkMod
     const [uploading, setUploading] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const [isRecording, setIsRecording] = useState(false);
+    const [recordingDuration, setRecordingDuration] = useState(0);
+    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+    const audioChunksRef = useRef<Blob[]>([]);
+    const timerRef = useRef<any>(null);
 
     const emojis = ['😊', '😂', '🔥', '❤️', '👍', '🙌', '🎉', '💡', '✅', '🚀', '✨', '🤔', '😎', '👋', '👀'];
 
     // For demo purposes, we'll use a fixed chat_id or look for the first one
     const [chatId, setChatId] = useState<string | null>(null);
 
-    useEffect(() => {
-        const setupChat = async () => {
-            console.log('setupChat: Starting for user:', user.id);
-            try {
-                // 0. Ensure user profile exists in public.users
-                // This handles cases where the user was created before the trigger was active
-                console.log('setupChat: Checking user profile...');
-                const { data: profile, error: profileError } = await supabase
+    const setupChat = async () => {
+        try {
+            // Ensure user profile exists
+            const { data: profile, error: profileError } = await supabase
+                .from('users')
+                .select('id')
+                .eq('id', user.id)
+                .single();
+
+            if (profileError || !profile) {
+                await supabase
                     .from('users')
-                    .select('id')
-                    .eq('id', user.id)
+                    .insert({
+                        id: user.id,
+                        name: user.name || user.email?.split('@')[0] || 'User',
+                        avatar_url: user.avatar_url
+                    });
+            }
+
+            // Get or create a "Global Chat"
+            const { data: chats, error: fetchChatsError } = await supabase
+                .from('chats')
+                .select('*')
+                .eq('is_group', true)
+                .limit(1);
+
+            if (fetchChatsError) {
+                console.error('setupChat: Error fetching chats:', fetchChatsError);
+            }
+
+            let currentChatId = chats?.[0]?.id;
+
+            if (!currentChatId) {
+                const { data: newChat, error: createChatError } = await supabase
+                    .from('chats')
+                    .insert({ name: 'Global Chat', is_group: true })
+                    .select()
                     .single();
 
-                if (profileError || !profile) {
-                    console.log('setupChat: User profile missing, creating...');
-                    await supabase
-                        .from('users')
-                        .insert({
-                            id: user.id,
-                            name: user.name || user.email?.split('@')[0] || 'User',
-                            avatar_url: user.avatar_url
-                        });
+                if (createChatError) {
+                    console.error('setupChat: Error creating chat:', createChatError);
                 }
-
-                // 1. Get or create a "Global Chat"
-                const { data: chats, error: fetchChatsError } = await supabase
-                    .from('chats')
-                    .select('*')
-                    .eq('is_group', true)
-                    .limit(1);
-
-                if (fetchChatsError) {
-                    console.error('setupChat: Error fetching chats:', fetchChatsError);
-                    alert(`Fetch Chats Error: ${fetchChatsError.message}`);
-                }
-
-                let currentChatId = chats?.[0]?.id;
-
-                if (!currentChatId) {
-                    console.log('setupChat: No global chat found, creating one...');
-                    const { data: newChat, error: createChatError } = await supabase
-                        .from('chats')
-                        .insert({ name: 'Global Chat', is_group: true })
-                        .select()
-                        .single();
-
-                    if (createChatError) {
-                        console.error('setupChat: Error creating chat:', createChatError);
-                        alert(`Create Chat Error: ${createChatError.message}`);
-                    }
-                    currentChatId = newChat?.id;
-                }
-
-                console.log('setupChat: Resolved chatId:', currentChatId);
-                setChatId(currentChatId);
-
-                if (currentChatId) {
-                    // 1.5 Ensure user is joined to the chat
-                    console.log('setupChat: Joining chat member...');
-                    const { error: joinError } = await supabase
-                        .from('chat_members')
-                        .upsert({ chat_id: currentChatId, user_id: user.id }, { onConflict: 'chat_id,user_id' });
-
-                    if (joinError) {
-                        console.error('setupChat: Error joining chat:', joinError);
-                        alert(`Join Chat Error: ${joinError.message}`);
-                    }
-
-                    // 2. Fetch initial messages
-                    console.log('setupChat: Fetching messages...');
-                    const { data: initialMessages, error: messagesError } = await supabase
-                        .from('messages')
-                        .select('*')
-                        .eq('chat_id', currentChatId)
-                        .order('created_at', { ascending: true });
-
-                    if (messagesError) {
-                        console.error('setupChat: Error fetching messages:', messagesError);
-                        alert(`Fetch Messages Error: ${messagesError.message}`);
-                    }
-
-                    if (initialMessages) {
-                        setMessages(initialMessages);
-                    }
-
-                    // 3. Subscribe to new messages
-                    console.log('setupChat: Subscribing to channel...');
-                    const subscription = supabase
-                        .channel(`chat:${currentChatId}`)
-                        .on('postgres_changes', {
-                            event: 'INSERT',
-                            schema: 'public',
-                            table: 'messages',
-                            filter: `chat_id=eq.${currentChatId}`
-                        }, (payload: { new: Message }) => {
-                            console.log('setupChat: Received new message via realtime:', payload.new);
-                            const newMessage = payload.new;
-                            setMessages((prev) => {
-                                // Prevent duplicates if we already added this message optimistically
-                                if (prev.some(m => m.id === newMessage.id)) return prev;
-                                return [...prev, newMessage];
-                            });
-                        })
-                        .subscribe((status) => {
-                            console.log(`setupChat: Realtime subscription status for chat:${currentChatId}:`, status);
-                        });
-
-                    return () => {
-                        console.log('setupChat: Unsubscribing...');
-                        subscription.unsubscribe();
-                    };
-                }
-            } catch (err: any) {
-                console.error('setupChat: Unexpected error:', err);
-                alert(`Setup Chat Unexpected Error: ${err.message || 'Unknown error'}`);
-            } finally {
-                setLoading(false);
+                currentChatId = newChat?.id;
             }
-        };
 
-        setupChat();
+            setChatId(currentChatId);
+
+            if (currentChatId) {
+                // Ensure user is joined to the chat
+                await supabase
+                    .from('chat_members')
+                    .upsert({ chat_id: currentChatId, user_id: user.id }, { onConflict: 'chat_id,user_id' });
+
+                // Fetch initial messages
+                const { data: initialMessages, error: messagesError } = await supabase
+                    .from('messages')
+                    .select('*')
+                    .eq('chat_id', currentChatId)
+                    .order('created_at', { ascending: true });
+
+                if (messagesError) {
+                    console.error('setupChat: Error fetching messages:', messagesError);
+                }
+
+                if (initialMessages) {
+                    setMessages(initialMessages);
+                }
+
+                // Subscribe to new messages
+                const subscription = supabase
+                    .channel(`chat:${currentChatId}`)
+                    .on('postgres_changes', {
+                        event: 'INSERT',
+                        schema: 'public',
+                        table: 'messages',
+                        filter: `chat_id=eq.${currentChatId}`
+                    }, (payload: { new: Message }) => {
+                        const newMessage = payload.new;
+                        setMessages((prev) => {
+                            // 1. If we already have this ID, skip
+                            if (prev.some(m => m.id === newMessage.id)) return prev;
+
+                            // 2. If it's our message, try to replace a matching optimistic message
+                            if (newMessage.sender_id === user.id) {
+                                // Match by content - slightly risky but usually fine for chat
+                                // We also check if it starts with 'temp-'
+                                const tempIndex = prev.findIndex(m =>
+                                    m.id.toString().startsWith('temp-') &&
+                                    m.content === newMessage.content
+                                );
+
+                                if (tempIndex !== -1) {
+                                    const next = [...prev];
+                                    next[tempIndex] = { ...newMessage, status: 'SENT' };
+                                    return next;
+                                }
+                            }
+
+                            return [...prev, newMessage];
+                        });
+                    })
+                    .subscribe();
+
+                return () => {
+                    subscription.unsubscribe();
+                };
+            }
+        } catch (err: any) {
+            console.error('setupChat: Unexpected error:', err);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        let cleanup: any;
+        setupChat().then(c => cleanup = c);
+        return () => { if (cleanup) cleanup(); };
     }, []);
 
     useEffect(() => {
@@ -166,21 +169,13 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ user, onLogout, isDarkMod
 
     const handleSendMessage = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!inputText.trim()) return;
-
-        if (!chatId) {
-            console.warn('handleSendMessage: chatId is missing');
-            alert('Wait! The chat is still connecting or failed to initialize. Please refresh.');
-            return;
-        }
+        if (!inputText.trim() || !chatId) return;
 
         const messageContent = inputText;
         setInputText('');
 
-        console.log('handleSendMessage: Sending to chatId:', chatId, 'as user:', user.id);
-
         // Optimistic Update
-        const tempId = typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : Math.random().toString(36).substring(2);
+        const tempId = `temp-${Date.now()}`;
         const optimisticMessage: Message = {
             id: tempId,
             sender_id: user.id,
@@ -202,14 +197,9 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ user, onLogout, isDarkMod
             .single();
 
         if (error) {
-            console.error('handleSendMessage: Error inserting message:', error);
-            alert(`Send Message Error: ${error.message} (Code: ${error.code})`);
-            // Remove optimistic message and put text back
             setMessages(prev => prev.filter(m => m.id !== tempId));
             setInputText(messageContent);
         } else {
-            console.log('handleSendMessage: Message sent successfully');
-            // Replace optimistic message with the real one from DB (with real ID)
             setMessages(prev => prev.map(m => m.id === tempId ? data : m));
         }
     };
@@ -219,50 +209,187 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ user, onLogout, isDarkMod
         setShowEmojiPicker(false);
     };
 
+    const startRecording = async () => {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const mediaRecorder = new MediaRecorder(stream);
+            mediaRecorderRef.current = mediaRecorder;
+            audioChunksRef.current = [];
+
+            mediaRecorder.ondataavailable = (event) => {
+                if (event.data.size > 0) {
+                    audioChunksRef.current.push(event.data);
+                }
+            };
+
+            mediaRecorder.onstop = async () => {
+                const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+                if (audioBlob.size > 0 && !isCancelled.current) {
+                    await uploadAudioMessage(audioBlob);
+                }
+                stream.getTracks().forEach(track => track.stop());
+            };
+
+            isCancelled.current = false;
+            mediaRecorder.start();
+            setIsRecording(true);
+            setRecordingDuration(0);
+
+            timerRef.current = setInterval(() => {
+                setRecordingDuration(prev => prev + 1);
+            }, 1000);
+
+        } catch (err) {
+            alert("Could not access microphone. Please check permissions.");
+        }
+    };
+
+    const stopRecording = () => {
+        if (mediaRecorderRef.current && isRecording) {
+            mediaRecorderRef.current.stop();
+            setIsRecording(false);
+            if (timerRef.current) clearInterval(timerRef.current);
+        }
+    };
+
+    const cancelRecording = () => {
+        if (mediaRecorderRef.current && isRecording) {
+            isCancelled.current = true;
+            mediaRecorderRef.current.stop();
+            setIsRecording(false);
+            if (timerRef.current) clearInterval(timerRef.current);
+            setRecordingDuration(0);
+        }
+    };
+
+    const isCancelled = useRef(false);
+
+    const uploadAudioMessage = async (blob: Blob) => {
+        if (!chatId) return;
+        setUploading(true);
+
+        const fileName = `${Date.now()}-voice.webm`;
+        const filePath = `${chatId}/${fileName}`;
+
+        try {
+            const { data: { publicUrl } } = supabase.storage.from('attachments').getPublicUrl(filePath);
+
+            const tempId = `temp-audio-${Date.now()}`;
+            const optimisticAudioMsg: Message = {
+                id: tempId,
+                sender_id: user.id,
+                content: `[AUDIO] ${fileName}|||${publicUrl}`,
+                created_at: new Date().toISOString(),
+                status: 'SENT'
+            } as any;
+            setMessages(prev => [...prev, optimisticAudioMsg]);
+            const { error: uploadError } = await supabase.storage
+                .from('attachments')
+                .upload(filePath, blob);
+
+            if (uploadError) {
+                setMessages(prev => prev.filter(m => m.id !== tempId));
+                return;
+            }
+
+            const { data: dbData, error: messageError } = await supabase
+                .from('messages')
+                .insert({
+                    chat_id: chatId,
+                    sender_id: user.id,
+                    content: `[AUDIO] ${fileName}|||${publicUrl}`
+                })
+                .select('*')
+                .single();
+
+            if (messageError) {
+                setMessages(prev => prev.filter(m => m.id !== tempId));
+                return;
+            }
+
+            setMessages(prev => prev.map(m => m.id === tempId ? { ...dbData, status: 'SENT' } : m));
+
+        } catch (error) {
+            // Silently fail as requested
+        } finally {
+            setUploading(false);
+        }
+    };
+
+    const formatDuration = (seconds: number) => {
+        const mins = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        return `${mins}:${secs.toString().padStart(2, '0')}`;
+    };
+
     const handleFileClick = () => {
         fileInputRef.current?.click();
     };
 
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
-        if (!file || !chatId) return;
-
-        setUploading(true);
-        const fileExt = file.name.split('.').pop();
-        const fileName = `${Math.random()}.${fileExt}`;
-        const filePath = `${chatId}/${fileName}`;
+        if (!file) return;
 
         try {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (!session || !chatId) {
+                return;
+            }
+
+            setUploading(true);
+            const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${file.name.split('.').pop()}`;
+            const filePath = `${chatId}/${fileName}`;
+
+            // Get Public URL first
+            const { data: { publicUrl } } = supabase.storage.from('attachments').getPublicUrl(filePath);
+
+            const tempId = `temp-file-${Date.now()}`;
+            const optimisticFileMsg: Message = {
+                id: tempId,
+                sender_id: user.id,
+                content: `[FILE] ${file.name}|||${publicUrl}`,
+                created_at: new Date().toISOString(),
+                status: 'SENT'
+            } as any;
+            setMessages(prev => [...prev, optimisticFileMsg]);
+
             const { error: uploadError } = await supabase.storage
                 .from('attachments')
                 .upload(filePath, file);
 
-            if (uploadError) throw uploadError;
+            if (uploadError) {
+                setMessages(prev => prev.filter(m => m.id !== tempId));
+                setUploading(false);
+                return;
+            }
 
-            const { data: { publicUrl } } = supabase.storage
-                .from('attachments')
-                .getPublicUrl(filePath);
-
-            const { error: messageError } = await supabase
+            const { data: dbData, error: messageError } = await supabase
                 .from('messages')
                 .insert({
                     chat_id: chatId,
                     sender_id: user.id,
                     content: `[FILE] ${file.name}|||${publicUrl}`
-                });
+                })
+                .select('*')
+                .single();
 
-            if (messageError) throw messageError;
+            if (messageError) {
+                setMessages(prev => prev.filter(m => m.id !== tempId));
+                return;
+            }
 
+            // Replace optimistic message with actual data
+            setMessages(prev => prev.map(m => m.id === tempId ? { ...dbData, status: 'SENT' } : m));
         } catch (error: any) {
-            console.error('Error uploading file:', error);
-            alert(`Failed to upload file: ${error.message || 'Unknown error'}. Please check if the "attachments" bucket exists in Supabase Storage and is set to Public.`);
+
         } finally {
             setUploading(false);
+            if (fileInputRef.current) fileInputRef.current.value = '';
         }
     };
 
     return (
-        <div className="flex h-screen bg-bg-light dark:bg-bg-dark transition-colors duration-500 overflow-hidden font-inter">
+        <div className="flex h-screen bg-bg-app text-text-main transition-colors duration-500 overflow-hidden font-inter">
             {/* Sidebar (Simplified for unified demo) */}
             <div className="w-full md:w-[400px] lg:w-[450px] border-r border-gray-200 dark:border-white/5 flex flex-col bg-white/70 dark:bg-bg-card/70 backdrop-blur-2xl z-20 shadow-xl">
                 <div className="h-20 px-6 flex items-center justify-between border-b border-gray-100 dark:border-white/5">
@@ -274,7 +401,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ user, onLogout, isDarkMod
                             <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-accent border-2 border-white dark:border-bg-card rounded-full shadow-sm"></div>
                         </div>
                         <div className="hidden sm:block">
-                            <h1 className="font-bold text-text-light dark:text-text-dark leading-tight">NHAPP</h1>
+                            <h1 className="font-bold text-text-main leading-tight">NHAPP</h1>
                             <p className="text-[10px] text-accent font-bold uppercase tracking-wider">Online</p>
                         </div>
                     </div>
@@ -305,7 +432,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ user, onLogout, isDarkMod
                 </div>
 
                 <div className="p-4 px-6">
-                    <div className="bg-bg-light/80 dark:bg-card-dark/80 flex items-center px-4 py-3 rounded-20 group transition-all ring-1 ring-gray-200/50 dark:ring-white/5 focus-within:ring-2 focus-within:ring-primary-light focus-within:bg-white dark:focus-within:bg-card-dark">
+                    <div className="bg-bg-light/80 dark:bg-bg-card/80 flex items-center px-4 py-3 rounded-20 group transition-all ring-1 ring-gray-200/50 dark:ring-white/5 focus-within:ring-2 focus-within:ring-primary-light focus-within:bg-white dark:focus-within:bg-card-dark">
                         <Search size={18} className="text-gray-400 group-focus-within:text-primary-light transition-colors" />
                         <input
                             type="text"
@@ -334,15 +461,13 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ user, onLogout, isDarkMod
                                 </div>
                                 <div className="absolute bottom-0.5 right-0.5 w-4 h-4 bg-primary-light border-2 border-white dark:border-bg-card rounded-full shadow-sm"></div>
                             </div>
-                            <div className="flex-1 ml-4 py-2">
-                                <div className="flex justify-between items-center mb-0.5">
-                                    <span className="font-bold text-[#111b21] dark:text-white">Global Chat</span>
-                                    <span className="text-[11px] text-gray-400 dark:text-gray-500 font-medium">Live</span>
+                            <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between mb-0.5">
+                                    <h3 className="font-bold text-text-main group-hover:text-primary-light transition-colors truncate">Global Chat</h3>
+                                    <span className="text-[11px] text-text-muted font-medium">9:41 PM</span>
                                 </div>
-                                <div className="flex justify-between items-center">
-                                    <p className="text-sm text-gray-400 dark:text-gray-500 truncate max-w-[200px] font-medium">
-                                        Supabase Messaging Enabled
-                                    </p>
+                                <div className="flex items-center space-x-1">
+                                    <p className="text-xs text-text-muted truncate">Welcome to the global chat!</p>
                                 </div>
                             </div>
                         </motion.div>
@@ -351,8 +476,9 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ user, onLogout, isDarkMod
             </div>
 
             {/* Main Chat Area */}
-            <div className="flex-1 flex flex-col relative">
-                <div className="absolute inset-0 z-0 dark:opacity-20 opacity-[0.03] pointer-events-none"
+            <div className="flex-1 flex flex-col relative bg-bg-app">
+                {/* Background Pattern */}
+                <div className="absolute inset-0 opacity-[0.05] dark:opacity-[0.02] pointer-events-none transition-opacity duration-500"
                     style={{ backgroundImage: 'url("https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png")', backgroundSize: '400px' }}>
                 </div>
 
@@ -388,9 +514,13 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ user, onLogout, isDarkMod
                                         {msg.content.startsWith('[FILE] ') ? (
                                             <div className="flex flex-col space-y-2">
                                                 {(() => {
-                                                    const parts = msg.content.replace('[FILE] ', '').split('|||');
-                                                    const fName = parts[0];
-                                                    const fUrl = parts[1];
+                                                    const raw = msg.content.replace('[FILE] ', '');
+                                                    const [fName, fUrl] = raw.split('|||');
+
+                                                    if (!fName || !fUrl) {
+                                                        return <p className="text-xs text-red-500">Invalid file message</p>;
+                                                    }
+
                                                     const isImg = /\.(jpg|jpeg|png|gif|webp)$/i.test(fName);
 
                                                     if (isImg) {
@@ -403,6 +533,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ user, onLogout, isDarkMod
                                                             />
                                                         );
                                                     }
+
                                                     return (
                                                         <div
                                                             className="flex items-center space-x-3 p-3 bg-black/5 dark:bg-white/5 rounded-xl cursor-pointer hover:bg-black/10 transition-colors"
@@ -414,6 +545,21 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ user, onLogout, isDarkMod
                                                                 <p className="text-[10px] opacity-60">Click to preview</p>
                                                             </div>
                                                             <ExternalLink size={16} className="opacity-40" />
+                                                        </div>
+                                                    );
+                                                })()}
+                                            </div>
+                                        ) : msg.content.startsWith('[AUDIO] ') ? (
+                                            <div className="flex flex-col space-y-1 min-w-[200px]">
+                                                {(() => {
+                                                    const raw = msg.content.replace('[AUDIO] ', '');
+                                                    const [_, fUrl] = raw.split('|||');
+                                                    return (
+                                                        <div className="flex items-center space-x-2 py-1">
+                                                            <div className="w-10 h-10 bg-primary-light/20 rounded-full flex items-center justify-center text-primary-light">
+                                                                <Mic size={20} />
+                                                            </div>
+                                                            <audio src={fUrl} controls className="h-8 max-w-[180px]" />
                                                         </div>
                                                     );
                                                 })()}
@@ -461,7 +607,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ user, onLogout, isDarkMod
                                         initial={{ opacity: 0, y: -10, scale: 0.9 }}
                                         animate={{ opacity: 1, y: -20, scale: 1 }}
                                         exit={{ opacity: 0, y: -10, scale: 0.9 }}
-                                        className="absolute bottom-full left-0 mb-2 p-2 bg-white dark:bg-bg-card rounded-20 shadow-premium border border-gray-100 dark:border-white/5 grid grid-cols-5 gap-2 w-48 z-50"
+                                        className="absolute bottom-full left-0 mb-2 p-2 bg-white dark:bg-card-dark rounded-20 shadow-premium border border-gray-100 dark:border-white/5 grid grid-cols-5 gap-2 w-48 z-50"
                                     >
                                         {emojis.map((emoji) => (
                                             <button
@@ -477,34 +623,76 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ user, onLogout, isDarkMod
                             </AnimatePresence>
                         </div>
 
-                        <motion.button
-                            whileHover={{ scale: 1.1, rotate: -5 }}
-                            whileTap={{ scale: 0.9 }}
-                            onClick={handleFileClick}
-                            disabled={uploading}
-                            className={`p-3 transition-colors ${uploading ? 'animate-pulse text-primary-light' : 'text-gray-500 dark:text-gray-400 hover:text-primary-light'}`}
-                        >
-                            <Paperclip size={22} className="rotate-45" />
-                        </motion.button>
-                        <input
-                            type="file"
-                            ref={fileInputRef}
-                            onChange={handleFileUpload}
-                            className="hidden"
-                        />
+                        <AnimatePresence mode="wait">
+                            {isRecording ? (
+                                <motion.div
+                                    key="recording-ui"
+                                    initial={{ opacity: 0, scale: 0.9 }}
+                                    animate={{ opacity: 1, scale: 1 }}
+                                    exit={{ opacity: 0, scale: 0.9 }}
+                                    className="flex-1 flex items-center justify-between px-4"
+                                >
+                                    <div className="flex items-center space-x-3">
+                                        <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
+                                        <span className="text-sm font-mono font-bold text-red-500">
+                                            {formatDuration(recordingDuration)}
+                                        </span>
+                                    </div>
+                                    <div className="flex items-center space-x-2">
+                                        <button
+                                            onClick={cancelRecording}
+                                            className="p-2 text-gray-400 hover:text-red-500 transition-colors"
+                                        >
+                                            <Trash2 size={20} />
+                                        </button>
+                                        <button
+                                            onClick={stopRecording}
+                                            className="p-2 text-primary-light hover:scale-110 transition-transform"
+                                        >
+                                            <motion.div
+                                                animate={{ scale: [1, 1.2, 1] }}
+                                                transition={{ repeat: Infinity, duration: 1.5 }}
+                                            >
+                                                <div className="w-10 h-10 bg-primary-light rounded-full flex items-center justify-center text-white">
+                                                    <Send size={18} />
+                                                </div>
+                                            </motion.div>
+                                        </button>
+                                    </div>
+                                </motion.div>
+                            ) : (
+                                <>
+                                    <motion.button
+                                        whileHover={{ scale: 1.1, rotate: -5 }}
+                                        whileTap={{ scale: 0.9 }}
+                                        onClick={handleFileClick}
+                                        disabled={uploading}
+                                        className={`p-3 transition-colors ${uploading ? 'animate-pulse text-primary-light' : 'text-gray-500 dark:text-gray-400 hover:text-primary-light'}`}
+                                    >
+                                        <Paperclip size={22} className="rotate-45" />
+                                    </motion.button>
+                                    <input
+                                        type="file"
+                                        ref={fileInputRef}
+                                        onChange={handleFileUpload}
+                                        className="hidden"
+                                    />
 
-                        <form onSubmit={handleSendMessage} className="flex-1">
-                            <input
-                                type="text"
-                                id="message-input"
-                                name="message-input"
-                                aria-label="Type a message"
-                                value={inputText}
-                                onChange={(e) => setInputText(e.target.value)}
-                                placeholder="Type a message..."
-                                className="w-full bg-transparent py-3 px-2 focus:outline-none dark:text-white placeholder:text-gray-400 text-sm"
-                            />
-                        </form>
+                                    <form onSubmit={handleSendMessage} className="flex-1">
+                                        <input
+                                            type="text"
+                                            id="message-input"
+                                            name="message-input"
+                                            aria-label="Type a message"
+                                            value={inputText}
+                                            onChange={(e) => setInputText(e.target.value)}
+                                            placeholder="Type a message..."
+                                            className="w-full bg-transparent py-3 px-2 focus:outline-none dark:text-white placeholder:text-gray-400 text-sm"
+                                        />
+                                    </form>
+                                </>
+                            )}
+                        </AnimatePresence>
 
                         <AnimatePresence mode="wait">
                             {inputText.trim() ? (
@@ -520,26 +708,27 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ user, onLogout, isDarkMod
                                 >
                                     <Send size={20} />
                                 </motion.button>
-                            ) : (
+                            ) : !isRecording && (
                                 <motion.button
-                                    key="voice"
+                                    key="mic"
                                     initial={{ scale: 0.5, opacity: 0 }}
                                     animate={{ scale: 1, opacity: 1 }}
                                     exit={{ scale: 0.5, opacity: 0 }}
                                     whileHover={{ scale: 1.1 }}
                                     whileTap={{ scale: 0.9 }}
+                                    onClick={startRecording}
                                     className="bg-gray-100 dark:bg-white/10 p-3.5 rounded-full text-gray-500 dark:text-gray-400 hover:bg-primary-light hover:text-white transition-all"
                                 >
-                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><line x1="12" x2="12" y1="19" y2="22" /></svg>
+                                    <Mic size={20} />
                                 </motion.button>
                             )}
                         </AnimatePresence>
                     </motion.div>
                 </div>
             </div>
+
         </div >
     );
 };
 
 export default ChatInterface;
-
